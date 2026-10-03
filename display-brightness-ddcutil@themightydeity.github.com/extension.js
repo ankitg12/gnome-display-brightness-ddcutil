@@ -592,16 +592,35 @@ export default class DDCUtilBrightnessControlExtension extends Extension {
         try {
             let displayBus;
             let displayName;
+            let isCurrentBlockValid = true;
 
             brightnessLog(this.settings, `ddcutil brief info:\n${ddcutilBriefInfo}`);
             const lines = ddcutilBriefInfo.split('\n');
             for (const i in lines) {
                 const ddcLine = lines[i];
 
+                if (/^Invalid display/i.test(ddcLine)) {
+                    isCurrentBlockValid = false;
+                    displayBus = null;
+                    displayName = null;
+                    continue;
+                }
+
+                if (/^Display \d+/i.test(ddcLine)) {
+                    isCurrentBlockValid = true;
+                    displayBus = null;
+                    displayName = null;
+                    continue;
+                }
+
                 if (ddcLine.trim().length === 0) {
                     displayBus = null;
                     displayName = null;
+                    continue;
                 }
+
+                if (!isCurrentBlockValid)
+                    continue;
 
                 if (this.busValidate(ddcLine)) {
                     displayBus = ddcLine.split('/dev/i2c-')[1].trim();
