@@ -155,14 +155,12 @@ export default class DDCUtilBrightnessControlExtension extends Extension {
         }
     }
 
-    /* LOCAL PATCH (angaur 2026-10-06): serialize ddcutil setvcp per bus.
-       The upstream code debounced for 130ms then used spawn_command_line_async
-       without tracking completion. Because ddcutil takes ~1s per write over I2C,
-       slider drags spawned overlapping processes that fought over flock(/dev/i2c-N),
-       causing writes to fail (rc 32) or arrive out-of-order, leaving monitors at
-       stale values (e.g. brightness 0 after dragging to 100).
-       Fix: track inFlight flag per bus. If busy, save the newest target. When the
-       in-flight write finishes, fire one write for the latest target. Drop intermediates. */
+    /* Serialize ddcutil setvcp per bus.
+       Because ddcutil takes ~1s per write over physical I2C, rapid slider drags
+       spawn overlapping processes that fight over flock(/dev/i2c-N), causing
+       flock timeouts or out-of-order completions.
+       Track an inFlight flag per bus: coalesce pending writes into the newest target,
+       and drain the latest target once the running write finishes. */
     _drainWriteQueue(displayBus) {
         const slot = writeCollection[displayBus];
         if (!slot) return;
@@ -629,12 +627,11 @@ export default class DDCUtilBrightnessControlExtension extends Extension {
                 To fix that, we define our own id inside the loop, which is used to detect right device.
             */
             let displayLoopId = 0;
-            /* LOCAL PATCH (angaur 2026-09-29): probe buses one at a time, with one retry.
-               Parallel D6 probes made random monitors reply "No monitor detected". */
+            /* Probe buses sequentially with retries to avoid I2C contention. */
             const busQueue = [];
             brightnessLog(this.settings, `ddcutil brief info:\n${ddcutilBriefInfo}`);
-            /* LOCAL PATCH (angaur 2026-10-03): skip "Invalid display" blocks (internal AUO
-               eDP panel, buses 6/14); their D6/getvcp retries delayed the real monitors. */
+            /* Skip 'Invalid display' blocks (e.g. internal eDP laptop panels without DDC/CI)
+               to avoid delaying external monitor initialization. */
             let validBlock = true;
             ddcutilBriefInfo.split('\n').map(ddcLine => {
                 if (/^Invalid display/.test(ddcLine))
